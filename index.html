@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The two-button calculator — 1 and eml</title>
+<meta name="description" content="A calculator with only two keys, 1 and eml(x,y) = exp(x) - ln(y), after Odrzywołek (2026). Build any elementary expression as a binary tree.">
+<style>
+  :root {
+    --bg: #fbfbf9; --surface: #ffffff; --text: #1c1c1a; --muted: #5f5f5a;
+    --line: #e4e4df; --accent: #1f6f5c; --accent-soft: #e8f2ee;
+    --warn: #9a5b1e; --radius: 14px; --max: 1060px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141514; --surface: #1c1e1d; --text: #e9eae7; --muted: #a3a6a1;
+      --line: #2e312f; --accent: #6ec7ae; --accent-soft: #1f2b27;
+      --warn: #d8a468;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px;
+  }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+  header { padding: 56px 0 26px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 12px;
+  }
+  h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 14px; }
+  .lede { color: var(--muted); max-width: 66ch; margin: 0 0 10px; font-size: 17.5px; }
+  .lede code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .cite { font-size: 13px; color: var(--muted); margin: 0; }
+
+  .app {
+    display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+    gap: 30px; align-items: start; padding-bottom: 40px;
+  }
+  @media (max-width: 900px) { .app { grid-template-columns: 1fr; gap: 34px; } }
+
+  .calc { min-width: 0; position: sticky; top: 20px; }
+  @media (max-width: 900px) { .calc { position: static; } }
+  .display {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px 18px 14px;
+  }
+  .expr-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .label {
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .expr {
+    margin: 0 0 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.55; color: var(--muted);
+    max-height: 78px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .tree {
+    display: flex; justify-content: safe center; align-items: flex-start;
+    min-height: 118px; max-height: 340px; overflow: auto;
+    padding: 14px 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .node { display: inline-flex; align-items: center; justify-content: center; }
+  .node.eml {
+    flex-direction: column; gap: 3px; border: 1px solid var(--line);
+    border-radius: 10px; padding: 5px 6px 6px; background: var(--surface);
+  }
+  .node .op {
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); line-height: 1;
+  }
+  .kids { display: flex; gap: 6px; align-items: flex-start; }
+  .node.leaf, .node.hole {
+    min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px;
+    font-weight: 600; font-size: 14px; line-height: 1;
+  }
+  .node.leaf { background: var(--accent-soft); color: var(--accent); }
+  .node.leaf.var { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .node.hole { border: 1px dashed var(--muted); color: var(--muted); font-weight: 400; opacity: .8; }
+  .node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .node.folded {
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
+    font-size: 12px; color: var(--muted); background: var(--bg); cursor: pointer;
+    font-family: ui-monospace, Menlo, monospace; line-height: 1.2; text-align: center;
+  }
+  .node.folded:hover { border-color: var(--accent); color: var(--accent); }
+  .node.folded .cnt { display: block; font-size: 9px; letter-spacing: .06em; opacity: .75; }
+
+  .value-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-top: 14px; }
+  .value {
+    font-size: clamp(24px, 3.4vw, 32px); font-weight: 600; letter-spacing: -0.02em;
+    color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .badge {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 2px 8px; font-weight: 600;
+  }
+  .badge:empty { display: none; }
+  .rpn-line { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-top: 10px; }
+  .rpn {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--muted); word-break: break-all;
+  }
+  .k { font-size: 11.5px; color: var(--muted); }
+
+  .inputs { display: flex; gap: 18px; align-items: center; margin: 14px 0 0; flex-wrap: wrap; }
+  .inputs-note {
+    font-size: 13px; color: var(--muted); margin: 16px 0 0; max-width: 62ch;
+  }
+  .inputs-note .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .92em; color: var(--text);
+  }
+  .inputs label { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+  .inputs input {
+    width: 82px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--text); font: 14px ui-monospace, Menlo, monospace;
+  }
+
+  .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .key {
+    height: 96px; border-radius: 16px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    font-family: inherit; transition: border-color .12s, transform .08s, background .12s;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  }
+  .key:hover { border-color: var(--accent); }
+  .key:active { transform: scale(.985); background: var(--accent-soft); }
+  .key .big { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+  .key.eml .big { font-size: 25px; letter-spacing: -0.01em; }
+  .key .sub { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .key-one .big { color: var(--accent); }
+
+  .under { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+  .under .hint { flex: 1; min-width: 180px; }
+  .link { color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; font: inherit; padding: 0; }
+  .link:hover { color: var(--accent); }
+
+  aside.examples { min-width: 0; }
+  .examples h2 {
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 4px; font-weight: 600;
+  }
+  .examples .intro { font-size: 14px; color: var(--muted); margin: 0 0 20px; }
+  .ex-cats { display: flex; flex-direction: column; gap: 8px; }
+  .ex-group { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+  .ex-group[open] { border-color: var(--accent); }
+  .ex-group > summary {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    padding: 11px 13px; cursor: pointer; list-style: none;
+    font-size: 13.5px; font-weight: 600; letter-spacing: -0.005em;
+  }
+  .ex-group > summary::-webkit-details-marker { display: none; }
+  .ex-group > summary:hover { color: var(--accent); }
+  .ex-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ex-group .sum-right { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-weight: 400; }
+  .ex-group .sum-count { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .ex-group .chev {
+    width: 6px; height: 6px; margin-left: 2px; flex: none;
+    border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+    transform: rotate(-45deg) translate(-1px, -1px); transition: transform .15s;
+  }
+  .ex-group[open] .chev { transform: rotate(45deg) translate(-2px, -2px); border-color: var(--accent); }
+  .ex-group .ex-body { padding: 0 10px 10px; }
+  .ex-group .ex-sub { font-size: 12px; color: var(--muted); margin: -2px 3px 9px; }
+  .example {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+    padding: 9px 11px; margin-bottom: 6px; transition: border-color .12s, background .12s;
+  }
+  .example:last-child { margin-bottom: 0; }
+  .example:hover { border-color: var(--accent); }
+  .example.active { border-color: var(--accent); background: var(--accent-soft); }
+  .ex-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .ex-formula { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .ex-k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .ex-code {
+    display: block; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.45; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ex-note { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  .notes { border-top: 1px solid var(--line); padding: 28px 0 56px; color: var(--muted); font-size: 14px; }
+  .notes p { max-width: 74ch; margin: 0 0 10px; }
+  .notes code { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
+  footer { padding: 0 0 60px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">One operator · One constant</p>
+    <h1>The two-button calculator</h1>
+    <p class="lede">
+      <strong>eml(x, y) = e<sup>x</sup> − ln y</strong>, plus the constant <strong>1</strong>, generates the
+      whole scientific calculator. Press <strong>1</strong> to place a one; press <strong>eml</strong> to split
+      a gap into two. Every expression is a binary tree of identical nodes.
+    </p>
+    <p class="cite">
+      The operator and its identities come from Andrzej Odrzywołek,
+      <a href="https://arxiv.org/abs/2603.21852"><em>All elementary functions from a single operator</em></a>
+      (arXiv:2603.21852, 2026). The two-button calculator framing is from
+      <a href="https://www.youtube.com/watch?v=LxVW3b8jVdE">Numberphile's video on the paper</a>.
+    </p>
+  </header>
+
+  <main class="app">
+    <section class="calc" aria-label="Calculator">
+      <div class="display">
+        <div class="expr-head">
+          <span class="label">Expression</span>
+          <span class="k" id="k"></span>
+        </div>
+        <p class="expr" id="expr">?</p>
+        <div class="tree" id="tree" aria-label="Expression tree"></div>
+        <div class="value-line">
+          <span class="label">Value</span>
+          <output class="value" id="value" aria-live="polite">—</output>
+          <span class="badge" id="badge"></span>
+        </div>
+        <div class="rpn-line">
+          <span class="label">RPN</span>
+          <code class="rpn" id="rpn"></code>
+        </div>
+      </div>
+
+      <p class="inputs-note">
+        These values are substituted for <span class="mono">x</span> and <span class="mono">y</span> whenever
+        an expression contains a variable. Load <span class="mono">ln x</span> from the conversions and it
+        evaluates at x = 2; load <span class="mono">x − y</span> and it uses both.
+      </p>
+      <div class="inputs">
+        <label>x <input id="xv" type="number" value="2" step="any" inputmode="decimal"></label>
+        <label>y <input id="yv" type="number" value="3" step="any" inputmode="decimal"></label>
+      </div>
+
+      <div class="keys">
+        <button class="key key-one" id="key1" type="button" aria-label="Insert one">
+          <span class="big">1</span>
+          <span class="sub">constant</span>
+        </button>
+        <button class="key eml" id="keyE" type="button" aria-label="Insert eml">
+          <span class="big">eml( , )</span>
+          <span class="sub">operator</span>
+        </button>
+      </div>
+
+      <div class="under">
+        <span class="hint" id="hint">Click a gap (?) to select it. Keys: 1, E, X, Y, Backspace.</span>
+        <button class="link" id="undo" type="button">Undo</button>
+        <button class="link" id="reset" type="button">Reset</button>
+      </div>
+    </section>
+
+    <aside class="examples">
+      <h2>Conversions</h2>
+      <p class="intro">Press a conversion to load it, then edit it with the two keys. <span class="mono">K</span> is the number of RPN tokens.</p>
+      <div id="examples"></div>
+    </aside>
+  </main>
+
+  <section class="notes">
+    <p>
+      The grammar is <code>S → 1 | eml(S, S)</code>. There is no subtraction, multiplication, sine or <code>π</code>
+      key: those are trees. For example <code>e = eml(1, 1)</code>, <code>e<sup>x</sup> = eml(x, 1)</code>, and
+      <code>ln x = eml(1, eml(eml(1, x), 1))</code>.
+    </p>
+    <p>
+      Internally the calculator works over the complex numbers with the principal branch of the logarithm, so
+      expressions can pass through <code>i</code> on their way to a real answer. Values shown are double-precision;
+      chains are the paper's compiler constructions, not always the shortest known forms.
+    </p>
+  </section>
+
+  <footer>
+    A toy implementation of the EML operator. The mathematics is Odrzywołek's; any bugs are the calculator's.
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const hole = () => ({ type: "hole" });
+  const one = () => ({ type: "one" });
+  const v = (name) => ({ type: "var", name });
+  const eml = (left, right) => ({ type: "eml", left, right });
+
+  const EXAMPLES = [
+    {
+      group: "Constants",
+      sub: "No variables — nothing to fill in.",
+      items: [
+        { formula: "e", note: "the base of the natural logarithm", expr: "eml(1, 1)" },
+        { formula: "0", note: "zero, as ln 1", expr: "eml(1, eml(eml(1, 1), 1))" },
+        { formula: "2", note: "an integer, from 1 and eml", expr: "eml(eml(1, eml(eml(1, 1), 1)), eml(eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(1, 1)), 1))" }
+      ]
+    },
+    {
+      group: "One variable (x)",
+      sub: "Uses x only. The number in the x box drives the value.",
+      items: [
+        { formula: "eˣ", note: "exponential", expr: "eml(x, 1)" },
+        { formula: "ln x", note: "natural logarithm", expr: "eml(1, eml(eml(1, x), 1))" },
+        { formula: "x − 1", note: "subtract one", expr: "eml(eml(1, eml(eml(1, x), 1)), eml(1, 1))" },
+        { formula: "−x", note: "negation", expr: "eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(x, 1))" },
+        { formula: "1/x", note: "reciprocal", expr: "eml(eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(eml(1, eml(eml(1, x), 1)), 1)), 1)" }
+      ]
+    },
+    {
+      group: "Two variables (x, y)",
+      sub: "Uses both boxes.",
+      items: [
+        { formula: "x − y", note: "subtraction", expr: "eml(eml(1, eml(eml(1, x), 1)), eml(y, 1))" },
+        { formula: "x + y", note: "addition", expr: "eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(eml(eml(1, eml(eml(1, eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(x, 1))), 1)), eml(y, 1)), 1))" },
+        { formula: "x × y", note: "multiplication", expr: "eml(eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(eml(eml(1, eml(eml(1, eml(eml(1, eml(eml(1, eml(1, eml(eml(1, 1), 1))), 1)), eml(eml(1, eml(eml(1, x), 1)), 1))), 1)), eml(eml(1, eml(eml(1, y), 1)), 1)), 1)), 1)" }
+      ]
+    }
+  ];
+
+  let root = hole();
+  let sel = "";
+  let history = [];
+  let activeExample = null;
+
+  const $ = (id) => document.getElementById(id);
+  const treeEl = $("tree");
+  const exprEl = $("expr");
+  const valueEl = $("value");
+  const badgeEl = $("badge");
+  const rpnEl = $("rpn");
+  const kEl = $("k");
+  const xEl = $("xv");
+  const yEl = $("yv");
+  const hintEl = $("hint");
+
+  // ---------- tree plumbing ----------
+  function getAt(node, path) {
+    let n = node;
+    for (const ch of path) n = ch === "L" ? n.left : n.right;
+    return n;
+  }
+  function setAt(node, path, repl) {
+    if (!path) return repl;
+    const ch = path[0];
+    const rest = path.slice(1);
+    const copy = { type: node.type };
+    if (node.type === "eml") { copy.left = node.left; copy.right = node.right; }
+    if (node.type === "var") copy.name = node.name;
+    if (ch === "L") copy.left = setAt(node.left, rest, repl);
+    else copy.right = setAt(node.right, rest, repl);
+    return copy;
+  }
+  function holes(node, path = "", out = []) {
+    if (node.type === "hole") out.push(path);
+    else if (node.type === "eml") { holes(node.left, path + "L", out); holes(node.right, path + "R", out); }
+    return out;
+  }
+  function nextHole(from) {
+    const hs = holes(root);
+    if (!hs.length) return null;
+    const after = hs.filter((p) => p > from);
+    return after.length ? after[0] : null;
+  }
+  function snapshot() {
+    history.push(JSON.stringify({ root, sel }));
+    if (history.length > 120) history.shift();
+  }
+
+  // ---------- actions ----------
+  function insertOne() {
+    const node = getAt(root, sel);
+    if (node.type === "one" || node.type === "eml") return;
+    snapshot();
+    root = setAt(root, sel, one());
+    const nxt = nextHole(sel);
+    if (nxt !== null) sel = nxt;
+    render();
+  }
+  function insertEml() {
+    const node = getAt(root, sel);
+    snapshot();
+    if (node.type === "hole") {
+      root = setAt(root, sel, eml(hole(), hole()));
+      sel = sel + "L";
+    } else {
+      root = setAt(root, sel, eml(node, hole()));
+      sel = sel + "R";
+    }
+    render();
+  }
+  function insertVar(name) {
+    const node = getAt(root, sel);
+    if (node.type !== "hole") return;
+    snapshot();
+    root = setAt(root, sel, v(name));
+    const nxt = nextHole(sel);
+    if (nxt !== null) sel = nxt;
+    render();
+  }
+  function clearNode() {
+    if (sel === "" && root.type === "hole") return;
+    snapshot();
+    root = setAt(root, sel, hole());
+    render();
+  }
+  function undo() {
+    const s = history.pop();
+    if (!s) return;
+    const st = JSON.parse(s);
+    root = st.root; sel = st.sel;
+    render();
+  }
+  function reset() {
+    snapshot();
+    root = hole(); sel = "";
+    expanded = new Set();
+    activeExample = null;
+    render();
+    document.querySelectorAll(".example.active").forEach((el) => el.classList.remove("active"));
+  }
+
+  // ---------- rendering ----------
+  function toExpr(n) {
+    if (n.type === "hole") return "?";
+    if (n.type === "one") return "1";
+    if (n.type === "var") return n.name;
+    return "eml(" + toExpr(n.left) + ", " + toExpr(n.right) + ")";
+  }
+  function toRpn(n, out = []) {
+    if (n.type === "eml") { toRpn(n.left, out); toRpn(n.right, out); out.push("E"); }
+    else out.push(n.type === "one" ? "1" : n.type === "var" ? n.name : "?");
+    return out;
+  }
+  const FOLD_DEPTH = 3;
+  let expanded = new Set();
+
+  function subtreeK(n) {
+    return toRpn(n).length;
+  }
+
+  function build(n, path, depth) {
+    let el;
+    if (n.type === "eml") {
+      const folded = depth >= FOLD_DEPTH && !expanded.has(path);
+      if (folded) {
+        el = document.createElement("span");
+        el.className = "node folded";
+        el.innerHTML = 'eml(…)<span class="cnt">K=' + subtreeK(n) + "</span>";
+        el.dataset.path = path;
+        if (path === sel) el.classList.add("selected");
+        el.title = "Expand this subtree";
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          expanded.add(path);
+          sel = path;
+          render();
+        });
+        return el;
+      }
+      el = document.createElement("span");
+      el.className = "node eml";
+      if (path !== "" && expanded.has(path)) {
+        const fold = document.createElement("button");
+        fold.type = "button";
+        fold.className = "op foldbtn";
+        fold.textContent = "eml ⌃";
+        fold.style.background = "none";
+        fold.style.border = "0";
+        fold.style.cursor = "pointer";
+        fold.style.padding = "0";
+        fold.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          expanded.delete(path);
+          render();
+        });
+        el.appendChild(fold);
+      } else {
+        const op = document.createElement("span");
+        op.className = "op"; op.textContent = "eml";
+        el.appendChild(op);
+      }
+      const kids = document.createElement("span");
+      kids.className = "kids";
+      kids.append(build(n.left, path + "L", depth + 1), build(n.right, path + "R", depth + 1));
+      el.appendChild(kids);
+    } else {
+      el = document.createElement("span");
+      el.className = "node " + (n.type === "hole" ? "hole" : "leaf" + (n.type === "var" ? " var" : ""));
+      el.textContent = n.type === "hole" ? "?" : n.type === "one" ? "1" : n.name;
+    }
+    el.dataset.path = path;
+    if (path === sel) el.classList.add("selected");
+    el.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      sel = path;
+      render();
+    });
+    return el;
+  }
+  function render() {
+    exprEl.textContent = toExpr(root);
+    treeEl.textContent = "";
+    treeEl.appendChild(build(root, "", 0));
+    const rpn = toRpn(root);
+    rpnEl.textContent = rpn.join(" ");
+    kEl.textContent = "K = " + rpn.length;
+    updateValue();
+  }
+
+  // ---------- arithmetic over C ----------
+  function cadd(a, b) { return { re: a.re + b.re, im: a.im + b.im }; }
+  function csub(a, b) { return { re: a.re - b.re, im: a.im - b.im }; }
+  function cmul(a, b) { return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re }; }
+  function cexp(a) {
+    if (Number.isNaN(a.re) || Number.isNaN(a.im)) return { re: NaN, im: NaN };
+    // Extended-real edge cases: the EML chains legitimately pass through
+    // exp(±inf) on their way to finite constants (see the paper, §4.1).
+    if (a.re === Infinity) return { re: Infinity, im: 0 };
+    if (a.re === -Infinity) return { re: 0, im: 0 };
+    const m = Math.exp(a.re);
+    return { re: m * Math.cos(a.im), im: m * Math.sin(a.im) };
+  }
+  function clog(a) {
+    if (Number.isNaN(a.re) || Number.isNaN(a.im)) return { re: NaN, im: NaN };
+    if (a.re === Infinity) return { re: Infinity, im: 0 };
+    if (a.re === -Infinity) return { re: Infinity, im: Math.PI };
+    const r = Math.hypot(a.re, a.im);
+    if (r === 0) return { re: -Infinity, im: 0 };
+    return { re: Math.log(r), im: Math.atan2(a.im, a.re) };
+  }
+  function evalNode(n, env) {
+    if (n.type === "hole") return null;
+    if (n.type === "one") return { re: 1, im: 0 };
+    if (n.type === "var") return { re: env[n.name], im: 0 };
+    const a = evalNode(n.left, env), b = evalNode(n.right, env);
+    if (!a || !b) return null;
+    return csub(cexp(a), clog(b));
+  }
+  function hasVar(n) {
+    if (n.type === "var") return true;
+    if (n.type === "eml") return hasVar(n.left) || hasVar(n.right);
+    return false;
+  }
+
+  function clean(x) {
+    if (!Number.isFinite(x)) return x;
+    if (Math.abs(x) < 1e-12) return 0;
+    const rounded = Number(x.toPrecision(12));
+    return Math.abs(rounded) < 1e-12 ? 0 : rounded;
+  }
+  function fmtNum(x) {
+    if (Number.isNaN(x)) return "undefined";
+    if (x === Infinity) return "∞";
+    if (x === -Infinity) return "−∞";
+    return String(clean(x)).replace("-", "−");
+  }
+  function fmtComplex(z) {
+    if (!z) return "—";
+    const re = clean(z.re), im = clean(z.im);
+    if (!Number.isFinite(re) || !Number.isFinite(im)) {
+      return fmtNum(re) + (im ? " + " + fmtNum(im) + "i" : "");
+    }
+    if (Math.abs(im) <= 1e-9 * Math.max(1, Math.abs(re))) return fmtNum(re);
+    if (Math.abs(re) <= 1e-12) return (im < 0 ? "−" : "") + fmtNum(Math.abs(im)) + "i";
+    return fmtNum(re) + (im < 0 ? " − " : " + ") + fmtNum(Math.abs(im)) + "i";
+  }
+  function badgeFor(z) {
+    if (!z || !Number.isFinite(z.re) || Math.abs(z.im) > 1e-9) return "";
+    if (hasVar(root)) return "";
+    const pairs = [["e", Math.E], ["π", Math.PI], ["0", 0], ["1", 1], ["−1", -1], ["2", 2], ["1/2", 0.5]];
+    for (const [name, val] of pairs) {
+      if (Math.abs(z.re - val) < 1e-10) return name;
+    }
+    return "";
+  }
+  function updateValue() {
+    const x = parseFloat(xEl.value);
+    const y = parseFloat(yEl.value);
+    const env = { x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 };
+    const z = evalNode(root, env);
+    if (!z) { valueEl.textContent = "incomplete"; badgeEl.textContent = ""; return; }
+    valueEl.textContent = fmtComplex(z);
+    badgeEl.textContent = badgeFor(z);
+  }
+
+  // ---------- parsing examples ----------
+  function parseEml(s) {
+    let i = 0;
+    const ws = () => { while (i < s.length && /\s/.test(s[i])) i++; };
+    const expect = (ch) => {
+      ws();
+      if (s[i] !== ch) throw new Error("Expected " + ch + " at " + i);
+      i++;
+    };
+    function parse() {
+      ws();
+      if (s.startsWith("eml", i)) {
+        i += 3; expect("(");
+        const a = parse(); expect(",");
+        const b = parse(); expect(")");
+        return eml(a, b);
+      }
+      if (s[i] === "1") { i++; return one(); }
+      if (s[i] === "x" || s[i] === "y") { const n = s[i++]; return v(n); }
+      throw new Error("Unexpected token at " + i);
+    }
+    const node = parse();
+    ws();
+    if (i < s.length) throw new Error("Trailing input at " + i);
+    return node;
+  }
+  function loadExample(item, el) {
+    try {
+      root = parseEml(item.expr);
+      sel = "";
+      history = [];
+      expanded = new Set();
+      activeExample = item.expr;
+      document.querySelectorAll(".example.active").forEach((e) => e.classList.remove("active"));
+      if (el) el.classList.add("active");
+      render();
+      if (window.innerWidth < 900) {
+        document.querySelector(".calc").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } catch (err) {
+      hintEl.textContent = "Could not load that expression.";
+    }
+  }
+
+  // ---------- examples UI ----------
+  function renderExamples() {
+    const host = $("examples");
+    const cats = document.createElement("div");
+    cats.className = "ex-cats";
+
+    for (const group of EXAMPLES) {
+      const details = document.createElement("details");
+      details.className = "ex-group";
+
+      const summary = document.createElement("summary");
+      const left = document.createElement("span");
+      left.textContent = group.group;
+      const right = document.createElement("span");
+      right.className = "sum-right";
+      const count = document.createElement("span");
+      count.className = "sum-count";
+      count.textContent = group.items.length + (group.items.length === 1 ? " item" : " items");
+      const chev = document.createElement("span");
+      chev.className = "chev";
+      chev.setAttribute("aria-hidden", "true");
+      right.append(count, chev);
+      summary.append(left, right);
+      details.appendChild(summary);
+
+      const body = document.createElement("div");
+      body.className = "ex-body";
+      if (group.sub) {
+        const sub = document.createElement("p");
+        sub.className = "ex-sub";
+        sub.textContent = group.sub;
+        body.appendChild(sub);
+      }
+
+      for (const item of group.items) {
+        const a = document.createElement("a");
+        a.className = "example";
+        a.href = "#";
+        const top = document.createElement("span");
+        top.className = "ex-top";
+        const f = document.createElement("span");
+        f.className = "ex-formula"; f.textContent = item.formula;
+        const k = document.createElement("span");
+        k.className = "ex-k";
+        k.textContent = "K = " + toRpn(parseEml(item.expr)).length;
+        top.append(f, k);
+        const code = document.createElement("code");
+        code.className = "ex-code";
+        code.textContent = item.expr.length > 110 ? item.expr.slice(0, 110) + "…" : item.expr;
+        code.title = item.expr;
+        const note = document.createElement("span");
+        note.className = "ex-note"; note.textContent = item.note;
+        a.append(top, code, note);
+        a.addEventListener("click", (ev) => { ev.preventDefault(); loadExample(item, a); });
+        body.appendChild(a);
+      }
+
+      details.appendChild(body);
+      cats.appendChild(details);
+    }
+
+    host.appendChild(cats);
+
+    const groups = [...cats.querySelectorAll("details")];
+    if (groups.length) groups[0].open = true;
+
+    // one category at a time, so the panel never turns into a long list
+    cats.addEventListener("toggle", (ev) => {
+      const target = ev.target;
+      if (!(target instanceof HTMLDetailsElement) || !target.open) return;
+      for (const g of groups) if (g !== target) g.open = false;
+    }, true);
+  }
+
+  // ---------- wiring ----------
+  $("key1").addEventListener("click", insertOne);
+  $("keyE").addEventListener("click", insertEml);
+  $("undo").addEventListener("click", undo);
+  $("reset").addEventListener("click", reset);
+  xEl.addEventListener("input", updateValue);
+  yEl.addEventListener("input", updateValue);
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); undo(); return; }
+    if (ev.key === "Backspace") { ev.preventDefault(); clearNode(); return; }
+    if (ev.key === "Escape") { ev.preventDefault(); reset(); return; }
+    if (ev.key === "1") { ev.preventDefault(); insertOne(); return; }
+    const k = ev.key.toLowerCase();
+    if (k === "e") { ev.preventDefault(); insertEml(); return; }
+    if (k === "x" || k === "y") { ev.preventDefault(); insertVar(k); }
+  });
+
+  renderExamples();
+  render();
+})();
+</script>
+</body>
+</html>
